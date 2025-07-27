@@ -33,12 +33,24 @@ class UploadController extends Controller
     <p>Этот сервис позволяет загружать файлы через <code>curl</code> и получать ссылки на скачивание и удаление.</p>
     <h2>Загрузка</h2>
     <pre><code>curl -F"file=@path/to/file.ext" https://{HOST} -v</code></pre>
-    <p>В ответе вы получите URL файла и заголовок <code>X-Delete</code> со ссылкой для удаления.</p>
+    <p>В ответе вы получите URL файла и заголовки:</p>
+    <ul>
+        <li><code>X-Delete</code> - ссылка для удаления файла</li>
+        <li><code>X-Retention-Days</code> - время жизни файла в днях</li>
+        <li><code>X-Expires-At</code> - дата истечения срока</li>
+    </ul>
     <h2>Скачивание</h2>
     <pre><code>curl https://{HOST}/file/&lt;token&gt; -O</code></pre>
     <h2>Удаление</h2>
     <pre><code>curl https://{HOST}/delete/&lt;deleteToken&gt;</code></pre>
-    <p>Файлы хранятся ограниченное время и автоматически очищаются.</p>
+    <h2>Время жизни файлов</h2>
+    <p>Время хранения рассчитывается динамически по размеру файла:</p>
+    <ul>
+        <li><strong>Малые файлы:</strong> до 1 года хранения</li>
+        <li><strong>Большие файлы (>512 МиБ):</strong> минимум 30 дней</li>
+        <li><strong>Формула:</strong> 30 + (30 - 365) × ((размер/512МиБ - 1)³)</li>
+    </ul>
+    <p>Чем больше файл, тем меньше время хранения.</p>
     <hr style="margin-top: 2rem;">
     <footer style="text-align: center; color: #666; font-size: 0.9rem;">
         <p>Задание Аширбеков Багдаулет для UniAds</p>
@@ -65,7 +77,7 @@ HTML;
         $path = $token;
         Storage::disk('local')->putFileAs(self::UPLOADS_FOLDER, $file, $path);
 
-        Upload::create([
+        $upload = Upload::create([
             'token'        => $token,
             'delete_token' => $deleteToken,
             'path'         => $path,
@@ -77,9 +89,13 @@ HTML;
 
         $fileUrl   = url('/file/' . $token);
         $deleteUrl = url('/delete/' . $deleteToken);
+        $retentionDays = $upload->calculateRetentionPeriod();
+        $expirationDate = $upload->getExpirationDate()->format('Y-m-d H:i:s');
 
         return response($fileUrl . "\n", 200)
             ->header('X-Delete', $deleteUrl)
+            ->header('X-Retention-Days', $retentionDays)
+            ->header('X-Expires-At', $expirationDate)
             ->header('Content-Type', 'text/plain');
     }
 

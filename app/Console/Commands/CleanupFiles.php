@@ -10,21 +10,46 @@ use Carbon\Carbon;
 class CleanupFiles extends Command
 {
     protected $signature = 'cleanup:files';
-    protected $description = 'Удаляет файлы старше заданного TTL';
-    private const TTL_DAYS = 7;
+    protected $description = 'Удаляет файлы с истекшим сроком жизни (по формуле)';
     private const UPLOADS_FOLDER = 'uploads';
 
     public function handle(): int
     {
-        $expiration = Carbon::now()->subDays(self::TTL_DAYS);
-        $expired = Upload::where('created_at', '<', $expiration)->get();
-        $count = 0;
-        foreach ($expired as $upload) {
-            Storage::disk('local')->delete(self::UPLOADS_FOLDER . '/' . $upload->path);
+        $allUploads = Upload::all();
+        $expiredUploads = $allUploads->filter(function ($upload) {
+            return $upload->isExpired();
+        });
+        
+        $deletedCount = 0;
+        
+        foreach ($expiredUploads as $upload) {
+            $filePath = self::UPLOADS_FOLDER . '/' . $upload->path;
+            
+            if (Storage::disk('local')->exists($filePath)) {
+                Storage::disk('local')->delete($filePath);
+            }
+            
+            $retentionDays = $upload->calculateRetentionPeriod();
+            $sizeInMiB = number_format($upload->size / 1024 / 1024, 2);
+            
+            $this->line("Удален: {$upload->original_name} ({$sizeInMiB} МиБ, TTL: {$retentionDays} дней)");
+            
             $upload->delete();
-            $count++;
+            $deletedCount++;
         }
-        $this->info('Удалено файлов: ' . $count);
+        
+        if ($deletedCount === 0) {
+            $this->info('Нет файлов для удаления');
+        } else {
+            $this->info("Удалено файлов: {$deletedCount}");
+        }
+        
+        // Показываем статистику активных файлов
+        $activeCount = $allUploads->count() - $deletedCount;
+        if ($activeCount > 0) {
+            $this->info("Активных файлов: {$activeCount}");
+        }
+        
         return 0;
     }
 }
