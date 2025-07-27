@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  app:
+    image: webdevops/php-nginx:8.3
+    working_dir: /app
+    volumes:
+      - ./:/app
+    environment:
+      WEB_DOCUMENT_ROOT: /app/public
+    ports:
+      - "8080:80"
