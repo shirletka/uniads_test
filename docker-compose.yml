@@ -7,5 +7,40 @@ services:
       - ./:/app
     environment:
       WEB_DOCUMENT_ROOT: /app/public
+      APP_ENV: local
+      APP_DEBUG: true
+      DB_CONNECTION: sqlite
+      DB_DATABASE: /app/database/database.sqlite
     ports:
       - "8080:80"
+    command: >
+      bash -c "
+        composer install --no-dev --optimize-autoloader &&
+        cp -n .env.example .env 2>/dev/null || true &&
+        php artisan key:generate --force &&
+        touch database/database.sqlite &&
+        php artisan migrate --force &&
+        mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs &&
+        chmod -R 775 storage bootstrap/cache &&
+        php-fpm -D && nginx -g 'daemon off;'
+      "
+    depends_on:
+      - setup
+    
+  setup:
+    image: webdevops/php-nginx:8.3
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: >
+      bash -c "
+        echo 'Setting up Laravel File Hosting...' &&
+        composer install &&
+        cp -n .env.example .env 2>/dev/null || true &&
+        php artisan key:generate --force &&
+        touch database/database.sqlite &&
+        php artisan migrate --force &&
+        mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs &&
+        chmod -R 775 storage bootstrap/cache &&
+        echo 'Setup completed successfully!'
+      "
